@@ -1,7 +1,7 @@
-import matplotlib.pyplot as plt
-from gurobipy import *
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+from gurobipy import *
 
 def optimize_ba(strikes1, best_bid1, best_ask1, rf1, expire1, fwd_price1,
                 strikes2, best_bid2, best_ask2, rf2, expire2, fwd_price2, verbose=False):
@@ -27,7 +27,7 @@ def optimize_ba(strikes1, best_bid1, best_ask1, rf1, expire1, fwd_price1,
     pix1 = m.addVars(nx1, lb=0.0, ub=1.0, name='transportx1')
     pix2 = m.addVars(nx2, lb=0.0, ub=1.0, name='transportx2')
     pi = m.addVars(nx1, nx2, lb=0.0, ub=1.0, name='transport')
-    # price/discounter/forward_price
+    # scaled price = price/discounter/forward_price
     scaled_price1 = m.addVars(nx1, lb=0.0, ub=1.0, name='scaled_price1')
     scaled_price2 = m.addVars(nx2, lb=0.0, ub=1.0, name='scaled_price2')
 
@@ -37,24 +37,14 @@ def optimize_ba(strikes1, best_bid1, best_ask1, rf1, expire1, fwd_price1,
     ask_gap2 = m.addVars(nx2, lb=0.0, ub=100.0, name='ask_gap2')
 
     for k1_idx in range(nx1):
-        # pricing formula at x1
+        # pricing formula, stock prices supported at strikes
         m.addConstr(quicksum((scaled_strikes1[j] - scaled_strikes1[k1_idx])*pix1[j] for j in
                              range(k1_idx, nx1)) == scaled_price1[k1_idx],
                     name='pricing_x1_'+str(k1_idx))
 
-    # for k1_idx in range(nx1-1):
-    #     # pricing formula at x1
-    #     m.addConstr(quicksum((scaled_strikes1[j] - scaled_strikes1[k1_idx])*pix1[j] for j in
-    #                          range(k1_idx+1, nx1)) == scaled_price1[k1_idx],
-    #                 name='pricing_x1_'+str(k1_idx))
-        # monotone condition at x1
-        # m.addConstr(scaled_price1[k1_idx] >= scaled_price1[k1_idx+1], name='mono_call1'+str(k1_idx))
-        # m.addConstr(scaled_price1[k1_idx] <= scaled_price1[k1_idx+1]+scaled_strikes1[k1_idx+1]-scaled_strikes1[k1_idx],
-        #             name='mono_call1' + str(k1_idx))
-
     # marginal 1 sums to one
     m.addConstr(pix1.sum('*') == 1.0, name='marginal1')
-
+    # mean value equals to forward
     m.addConstr(quicksum([pix1[i]*strikes1[i] for i in range(nx1)]) == fwd_price1, name='mean')
 
     for k2_idx in range(nx2):
@@ -62,25 +52,16 @@ def optimize_ba(strikes1, best_bid1, best_ask1, rf1, expire1, fwd_price1,
         m.addConstr(quicksum((scaled_strikes2[j] - scaled_strikes2[k2_idx]) * pix2[j] for j in
                              range(k2_idx, nx2)) == scaled_price2[k2_idx], name='pricing_x2_' + str(k2_idx))
 
-    # for k2_idx in range(nx2-1):
-    #     # pricing formula at x2
-    #     m.addConstr(quicksum((scaled_strikes2[j] - scaled_strikes2[k2_idx])*pix2[j] for j in
-    #                          range(k2_idx+1, nx2)) == scaled_price2[k2_idx],
-    #                 name='pricing_x2_' + str(k2_idx))
-    #     # monotone condition at x2
-    #     m.addConstr(scaled_price2[k2_idx] >= scaled_price2[k2_idx+1], name='mono_call2' + str(k2_idx))
-    #     m.addConstr(scaled_price2[k2_idx] <= scaled_price2[k2_idx+1]+scaled_strikes2[k2_idx+1]-scaled_strikes2[k2_idx],
-    #                 name='mono_call2' + str(k2_idx))
 
     # marginal 2 sums to one
     m.addConstr(pix2.sum('*') == 1.0, name='marginal2')
+    # mean value equals to forward
     m.addConstr(quicksum([pix2[i]*strikes2[i] for i in range(nx2)]) == fwd_price2, name='mean')
 
-
-    # # marginal constraints
+    ## marginal constraints
     m.addConstrs((pi.sum(i, '*') == pix1[i] for i in range(nx1)), name='x1_marginal')
     m.addConstrs((pi.sum('*', i) == pix2[i] for i in range(nx2)), name='x2_marginal')
-    #
+
     # joint martingale constraints
     m.addConstrs(((quicksum(pi[i, j]*scaled_strikes2[j] for j in range(nx2)) == scaled_strikes1[i]*pi.sum(i, '*'))
                   for i in range(nx1)), name='martingale_at_x1')
@@ -144,13 +125,15 @@ def optimize_ba(strikes1, best_bid1, best_ask1, rf1, expire1, fwd_price1,
     price1 = s_price1/np.exp(rf1*expire1)*fwd_price1
     price2 = s_price2/np.exp(rf2*expire2)*fwd_price2
 
-    print('Marginal 1 price violation:',
-          np.maximum(best_bid1-price1, 0).sum() + np.maximum(price1-best_ask1, 0).sum())
 
-    print('Marginal 2 price violation:',
-          np.maximum(best_bid2-price2, 0).sum() + np.maximum(price2-best_ask2, 0).sum())
 
     if verbose:
+        print('Marginal 1 price violation:',
+              np.maximum(best_bid1 - price1, 0).sum() + np.maximum(price1 - best_ask1, 0).sum())
+
+        print('Marginal 2 price violation:',
+              np.maximum(best_bid2 - price2, 0).sum() + np.maximum(price2 - best_ask2, 0).sum())
+
         plt.figure()
         plt.plot(strikes1, price1-best_bid1, label='Bid 1')
         plt.plot(strikes1, price1-best_ask1, label='Ask 1')
@@ -183,11 +166,11 @@ def optimize_ba(strikes1, best_bid1, best_ask1, rf1, expire1, fwd_price1,
 
 
 
+##### data loader #####
+def get_dist_ba(f_path, init_date, expiry_date, strikes_low=0.5, strikes_upper=1.5,
+                OI_thrs1=1, OI_thrs2=1, verbose=False):
 
-def get_dist_ba(f_path, init_date, expiry_date, strikes_low=0.2, strikes_upper=1.8,
-                OI_thrs1=1000, OI_thrs2=1000, verbose=False):
     option_data = pd.read_csv(f_path)
-
 
     option_data = option_data[(option_data['date'] == init_date) & option_data['exdate'].isin(expiry_date)]
     option_data = option_data[option_data['impl_volatility']>0.01]
@@ -227,10 +210,11 @@ def get_dist_ba(f_path, init_date, expiry_date, strikes_low=0.2, strikes_upper=1
     expire2 = marginal2['maturity'].values[0]
     fwd_price2 = marginal2['forward'].values[0]
 
+    ### add prices with strikes = 0 or very high number
     strikes1 = np.concatenate((np.array([0.0]), strikes1, np.array([strikes1.max()+50.0])))
     best_bid1 = np.concatenate((np.array([np.exp(-rf1*expire1)*fwd_price1]), best_bid1, np.array([0.0])))
     best_ask1 = np.concatenate((np.array([np.exp(-rf1*expire1)*fwd_price1]), best_ask1, np.array([best_ask1.min()])))
-    #
+
     strikes2 = np.concatenate((np.array([0.0]), strikes2, np.array([strikes2.max()+50.0])))
     best_bid2 = np.concatenate((np.array([np.exp(-rf2*expire2)*fwd_price2]), best_bid2, np.array([0.0])))
     best_ask2 = np.concatenate((np.array([np.exp(-rf2*expire2)*fwd_price2]), best_ask2, np.array([best_ask2.min()])))
@@ -240,7 +224,7 @@ def get_dist_ba(f_path, init_date, expiry_date, strikes_low=0.2, strikes_upper=1
     px1, px2, px = optimize_ba(strikes1, best_bid1, best_ask1, rf1, expire1, fwd_price1,
                                strikes2, best_bid2, best_ask2, rf2, expire2, fwd_price2, verbose)
 
-
+    ## px is the joint density
     nonzero1 = np.where(px1>0.0)
     zeros1 = np.where(px1 == 0.0)
     px = np.delete(px, obj=zeros1, axis=0)
@@ -271,13 +255,14 @@ def get_dist_ba(f_path, init_date, expiry_date, strikes_low=0.2, strikes_upper=1
 
 if __name__ == "__main__":
 
-    option_data = pd.read_csv('D:/GitHub/CMOT/Notebooks/IBMCall.csv')
+    option_data = pd.read_csv('./data/2022_GSKCall.csv')
     cur_date = option_data['date'].unique()
     init_date = cur_date[2]
     matur_date = option_data[option_data['date'] == init_date]['exdate'].unique()
     expdate = matur_date[[0, 1]]
     print('Date of data', init_date, expdate)
-    px_1, X1, px_2, X2, px = get_dist_ba(f_path='D:/GitHub/CMOT/Notebooks/IBMCall.csv', init_date=init_date, expiry_date=expdate,
+    px_1, X1, px_2, X2, px = get_dist_ba(f_path='./data/2022_GSKCall.csv',
+                                         init_date=init_date, expiry_date=expdate,
                                          strikes_low=0.1, strikes_upper=2.0,
                                          OI_thrs1=1, OI_thrs2=1, verbose=True)
 
@@ -286,6 +271,4 @@ if __name__ == "__main__":
     print(px_1, px_1.shape, px_1.sum())
     print(X2)
     print(px_2, px_2.shape, px_2.sum())
-
-
 
