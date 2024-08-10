@@ -2,7 +2,7 @@ from gurobipy import *
 
 ##### The main optimizer ######
 def mcoptim(MAX, cost, X1, X2, Y1, Y2, px_1, px_2, py_1, py_2,
-            McCor_Causal, McCor_Anticausal, Causal=False, Anticausal=False, verbose=False):
+            McCor_Causal, McCor_Anticausal, Causal=False, Anticausal=False, cons=False, thres=0.01, verbose=False):
     m = Model('Primal')
     if verbose:
         m.setParam('OutputFlag', 1)
@@ -32,7 +32,15 @@ def mcoptim(MAX, cost, X1, X2, Y1, Y2, px_1, px_2, py_1, py_2,
     m.addConstrs((piy.sum('*', i) == py_2[i] for i in range(ny2)), name='y2_marginal')
 
     ### joint density of X and Y
-    pi = m.addVars(nx1, nx2, ny1, ny2, lb=0.0, ub=1.0, name='transport')
+    if cons:
+        pi = m.addVars(nx1, nx2, ny1, ny2, lb=0.0, ub=0.01, name='transport')
+        m.addConstrs((pi[i, j, k, l] >= thres * min([px_1[i], px_2[j], py_1[k], py_2[l]])
+                      for i in range(0, nx1, 3)
+                      for j in range(0, nx2, 3)
+                      for k in range(0, ny1, 3)
+                      for l in range(0, ny2, 3)), name='marginal')
+    else:
+        pi = m.addVars(nx1, nx2, ny1, ny2, lb=0.0, ub=1.0, name='transport')
     # marginal constraints
     m.addConstrs((pi.sum(i, '*', '*', '*') == pix.sum(i, '*') for i in range(nx1)), name='x1_marginal')
     m.addConstrs((pi.sum('*', i, '*', '*') == pix.sum('*', i) for i in range(nx2)), name='x2_marginal')

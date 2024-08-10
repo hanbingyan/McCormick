@@ -9,6 +9,4 @@ logs/.DS_Store
 *.pdf
 *.mps
 *.ilp
-*.csv
-!GILD_GSK_logs/GILD_GSK.csv
-!JPM_MS_logs/JPM_MS.csv
+/data

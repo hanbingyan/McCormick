@@ -6,6 +6,7 @@ import os
 import matplotlib.pyplot as plt
 from optim import mcoptim
 import calibdensity
+import gurobipy
 
 class bcolors:
     RED = '\033[31m'
@@ -45,8 +46,14 @@ support_y2 = []
 ticker1 = 'GILD'
 ticker2 = 'GSK'
 
+
+### Flags to add L and U constraints ####
+Cons_Flag = True
+thres = 0.005
+
+
 maturity_idx1 = 0
-maturity_idx2 = 4
+maturity_idx2 = 1
 
 option_data = pd.read_csv('./data/2022_{}Call.csv'.format(ticker1))
 cur_date = option_data['date'].unique()
@@ -102,29 +109,18 @@ for d_idx in range(scenes):
                     cost[x1_idx, x2_idx, y1_idx, y2_idx] = np.max([(X1[x1_idx]+Y1[y1_idx]+X2[x2_idx]+Y2[y2_idx])/4 - strike, 0])
 
 
-    time0.append(init_date)
-    time1.append(expdate[0])
-    time2.append(expdate[1])
-    strike_hist.append(strike)
-
-    density_x1.append(px_1)
-    support_x1.append(X1)
-    density_x2.append(px_2)
-    support_x2.append(X2)
-
-    density_y1.append(py_1)
-    support_y1.append(Y1)
-    density_y2.append(py_2)
-    support_y2.append(Y2)
-
 
     for MAX_FLAG in [True, False]:
-        objval_0 = mcoptim(MAX_FLAG, cost, X1, X2, Y1, Y2, px_1, px_2, py_1, py_2,
-                           McCor_Causal=False, McCor_Anticausal=False)
+        try:
+            objval_0 = mcoptim(MAX_FLAG, cost, X1, X2, Y1, Y2, px_1, px_2, py_1, py_2,
+                               McCor_Causal=False, McCor_Anticausal=False, cons=Cons_Flag, thres=thres)
 
+            objval_2 = mcoptim(MAX_FLAG, cost, X1, X2, Y1, Y2, px_1, px_2, py_1, py_2,
+                               McCor_Causal=True, McCor_Anticausal=True, cons=Cons_Flag, thres=thres)
 
-        objval_2 = mcoptim(MAX_FLAG, cost, X1, X2, Y1, Y2, px_1, px_2, py_1, py_2,
-                           McCor_Causal=True, McCor_Anticausal=True)
+        except gurobipy.GurobiError:
+            # print(bcolors.RED + 'A solution does not exist. Skipped', bcolors.ENDC)
+            break
 
         print(bcolors.PINK + 'MOT:', objval_0, bcolors.ENDC)
         print(bcolors.BLUE + 'McCormick:', objval_2, bcolors.ENDC)
@@ -133,6 +129,22 @@ for d_idx in range(scenes):
         if MAX_FLAG:
             MOT_max.append(objval_0)
             Mc_max.append(objval_2)
+
+            # log it only when a McCormick solution exists; log it only once
+            time0.append(init_date)
+            time1.append(expdate[0])
+            time2.append(expdate[1])
+            strike_hist.append(strike)
+
+            density_x1.append(px_1)
+            support_x1.append(X1)
+            density_x2.append(px_2)
+            support_x2.append(X2)
+
+            density_y1.append(py_1)
+            support_y1.append(Y1)
+            density_y2.append(py_2)
+            support_y2.append(Y2)
         else:
             MOT_min.append(objval_0)
             Mc_min.append(objval_2)
@@ -149,8 +161,10 @@ print('Number of tests:', len(ratios))
 print('Average ratios:', ratios.mean())
 print('Min of ratios:', ratios.min())
 
-
-log_dir = './{}_{}_logs'.format(ticker1, ticker2)
+if Cons_Flag:
+    log_dir = './logs/{}_{}_cons_{}_{}'.format(ticker1, ticker2, thres, maturity_idx2)
+else:
+    log_dir = './logs/{}_{}_uncons'.format(ticker1, ticker2)
 
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
@@ -161,6 +175,7 @@ res_df = pd.DataFrame({'time0': time0, 'time1': time1, 'time2': time2, 'strike':
                        'Ratios': ratios})
 
 res_df.to_csv('{}/{}_{}.csv'.format(log_dir, ticker1, ticker2), index=False)
+
 # plt.figure()
 # plt.hist(ratios)
 # plt.legend(loc='best', fontsize=15)
