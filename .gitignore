@@ -1,12 +1,11 @@
 
 logs/.DS_Store
 .ipynb_checkpoints
+.idea
 .DS_Store
 *.pyc
 *.xml
 *.iml
-*.pickle
-*.pdf
 *.mps
 *.ilp
 /data

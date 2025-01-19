@@ -49,11 +49,11 @@ ticker2 = 'GSK'
 
 ### Flags to add L and U constraints ####
 Cons_Flag = True
-thres = 0.005
+thres = 0.01
 
 
 maturity_idx1 = 0
-maturity_idx2 = 1
+maturity_idx2 = 4
 
 option_data = pd.read_csv('./data/2022_{}Call.csv'.format(ticker1))
 cur_date = option_data['date'].unique()
